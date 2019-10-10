@@ -1,0 +1,10 @@
+---
+
+sudo_mimdevs: "true"
+
+users: 
+  - username: michael
+    groups: ictops
+    default_group: ictops
+    password: "super_secret_default_password"
+    update_password: "on_create"

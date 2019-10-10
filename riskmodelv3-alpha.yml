@@ -1,0 +1,187 @@
+---
+
+- name: Configure the Ansible user account
+  hosts: all
+  become: yes
+  become_method: sudo
+  roles:
+    - lockdown
+    - users
+  vars:
+    users: 
+      - username: michael
+        groups: ictops, devs
+        default_group: ictops
+        password: "super_secret_password"
+        update_password: "on_create"
+
+- name: Install repos
+  hosts: all
+  become: yes
+  become_method: sudo
+  tasks:
+    - name: Set the ODBC connection settings
+      ini_file:
+        path: /etc/odbc.ini
+        section: mim_reporting_db
+        option: Driver
+        value: "ODBC Driver 17 for SQL Server"
+    - name: Set the ODBC connection settings
+      ini_file:
+        path: /etc/odbc.ini
+        section: mim_reporting_db
+        option: Description
+        value: "MIM Reporting CRM DB"
+    - name: Set the ODBC connection settings
+      ini_file:
+        path: /etc/odbc.ini
+        section: mim_reporting_db
+        option: Trace
+        value: "No"
+    - name: Set the ODBC connection settings
+      ini_file:
+        path: /etc/odbc.ini
+        section: mim_reporting_db
+        option: Server
+        value: "local_mssql_db_server.me.local"
+    - name: Install the repo key
+      apt_key:
+        url: https://packages.microsoft.com/keys/microsoft.asc
+        state: present
+      register: repo_key_added
+    - name: Add the repo
+      apt_repository:
+        repo: "deb [arch=amd64] https://packages.microsoft.com/debian/9/prod stretch main"
+        state: present
+      register: repo_added
+    - name: Apt update
+      apt:
+        update_cache: yes
+      when: repo_added.changed == true or repo_key_added.changed == true
+    - name: Install packages
+      apt:
+        name: 
+          - aptitude
+          - libsnappy-dev
+          - unixodbc
+          - unixodbc-dev
+          - curl 
+          - apt-utils 
+          - apt-transport-https 
+          - debconf-utils 
+          - gcc 
+          - build-essential 
+          - g++-6
+          - msodbcsql17
+          - unixodbc-dev 
+          - mssql-tools
+          - git
+          - python3
+          - python3-dev
+          - python3-setuptools
+          - python-setuptools
+          - python3-pip
+          - nano
+          - iotop
+          - rsyslog
+        state: present
+      environment: 
+        ACCEPT_EULA: y
+    - name: Install pip packages
+      pip:
+        name: 
+          - setuptools
+          - numpy
+          - pandas 
+          - pyodbc 
+          - sqlalchemy 
+          - parquet 
+          - pyodbc
+          - pyarrow
+          - dotenv
+          - python-dotenv
+        state: present
+        executable: pip3
+    - name: Create the logging directory
+      file:
+        path: /var/log/riskmodel
+        state: directory
+        owner: ansible
+        group: ansible
+    - name: Create the export log 
+      file:
+        path: /var/log/riskmodel/export.log
+        state: touch
+        owner: ansible
+        group: ansible
+    - name: Configure rsyslog lineinfile
+      copy:
+        src: files/01-module-lineinfile.conf
+        dest: /etc/rsyslog.d/01-module-lineinfile.conf
+      register: rsyslog_lineinfile
+    - name: Configure rsyslog riskmodel ingestion
+      copy:
+        src: files/20-riskmodel.conf
+        dest: /etc/rsyslog.d/20-riskmodel.conf
+      register: rsyslog_ingestion
+    - name: Configure rsyslog graylog output
+      copy:
+        src: files/99-graylog.conf
+        dest: /etc/rsyslog.d/99-graylog.conf
+      register: rsyslog_output
+    - name: Restart rsyslog
+      service:
+        name: rsyslog
+        state: restarted
+      when: rsyslog_lineinfile.changed == true or rsyslog_output.changed == true or rsyslog_ingestion.changed == true
+
+- name: Setup SSH
+  hosts: all
+  tasks:
+    - name: Create the SSH folder
+      file:
+        path: /home/ansible/.ssh
+        state: directory
+    - name: Copy the SSH key
+      copy:
+        src: files/riskmodelv3-builder.pem
+        dest: /home/ansible/.ssh/riskmodelv3-builder.pem
+        mode: 0600
+        owner: ansible
+        group: ansible
+    - name: Copy the SSH config
+      copy:
+        src: files/ssh_config
+        dest: /home/ansible/.ssh/config
+        mode: 0600
+        owner: ansible
+        group: ansible
+
+- name: git gud
+  hosts: all
+  tasks:
+    - name: Create the repo base folder
+      file:
+        path: /home/ansible/src
+        state: directory
+    - name: Clone the repo
+      git:
+        repo: git@riskmodel-v3-repo:makeitmine/mim-risk-model.git
+        dest: /home/ansible/src/mim-risk-model
+  tags: git
+
+- name: Set the scheduled export task
+  hosts: all
+  become: yes
+  tasks:
+    - name: Drop the cron job
+      cron:
+        name: "export_db_to_s3"
+        weekday: "5"
+        minute: 0
+        hour: 6
+        job: "cd /home/ansible/src/mim-risk-model && git pull origin master && /usr/bin/python3 /home/ansible/src/mim-risk-model/batch_load_data_from_mssql_db.py && aws s3 sync /model_data/data/input s3://mim.riskmodel/v3/alpha/parquet --no-progress > /home/ansible/export.log 2>&1"
+        user: ansible
+        cron_file: "export_db_to_s3"
+        state: present
+  tags: cron

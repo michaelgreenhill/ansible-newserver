@@ -1,0 +1,38 @@
+---
+
+- name: Set UsePAM
+  lineinfile: 
+    dest: /etc/ssh/sshd_config
+    state: present
+    regexp: "^UsePAM"
+    line: "UsePAM yes"
+  tags: 
+  - usepam
+
+- name: Enable pam_access.so
+  lineinfile: 
+    dest: /etc/pam.d/sshd
+    state: present
+    regexp: "^# account  required     pam_access.so"
+    line: "account  required     pam_access.so"
+    insertafter: "# account  required     pam_access.so"
+  tags: 
+  - lockdown
+  - pamaccess
+
+- name: Add mim_auth marker
+  lineinfile:
+    path: /etc/security/access.conf
+    regexp: "^# mim_auth"
+    line: "# mim_auth"
+  tags: 
+  - mim_auth
+
+- name: Add mim_auth config rules
+  blockinfile:
+    path: /etc/security/access.conf
+    insertafter: "# mim_auth"
+    marker: "### {mark} mim_auth_block ANSIBLE MANAGED BLOCK ###"
+    block: "+ : ALL EXCEPT ansible : ALL\n+ : ansible : subnet of allowed IPs\n- : ALL : ALL"
+  tags: 
+  - mim_auth

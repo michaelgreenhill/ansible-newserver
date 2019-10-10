@@ -1,0 +1,11 @@
+---
+
+all:
+  hosts:
+    mcsuk-prod:
+      ansible_host: ip address yolo
+      ansible_user: adminuser
+      become_method: sudo
+      become_user: adminuser
+      ansible_connection: ssh 
+      ansible_ssh_private_key_file: path/to/admin/pemfile

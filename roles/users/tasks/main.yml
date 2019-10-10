@@ -1,0 +1,69 @@
+---
+
+# Configure users
+- name: Create ICTOps group
+  group: 
+    name: ictops
+    state: present
+
+- name: Create devs group
+  group:
+    name: devs
+    state: present
+
+- name: Create serviceaccounts group
+  group:
+    name: serviceaccounts
+    state: present
+
+- name: Create MIM sudoers file
+  copy: 
+    content: "%ictops ALL=(ALL:ALL) ALL"
+    dest: /etc/sudoers.d/mim
+    force: no
+    group: root
+    owner: root
+    mode: 0440
+
+- name: Add ICTOps to sudoers
+  lineinfile: 
+    dest: /etc/sudoers.d/mim
+    state: present
+    regexp: "^%ictops"
+    line: "%ictops ALL=(ALL:ALL) ALL"
+
+- name: Add devs to sudoers
+  lineinfile: 
+    dest: /etc/sudoers.d/mim
+    state: present
+    regexp: "^%devs"
+    line: "%devs ALL=(ALL:ALL) ALL"
+  when: sudo_mimdevs == "true"
+
+- name: Remove devs from sudoers
+  lineinfile: 
+    dest: /etc/sudoers.d/mim
+    state: absent
+    regexp: "^%devs"
+    line: "%devs ALL=(ALL:ALL) ALL"
+  when: sudo_mimdevs == "false"
+
+- name: create users
+  user: 
+    name: "{{ item.username }}"
+    shell: "/bin/bash" 
+    createhome: "yes" 
+    group: "{{ item.default_group }}" 
+    groups: "{{ item.groups }}" 
+    password: "{{ item.password | password_hash('sha512') }}"
+    append: "yes"
+    update_password: "{{ item.update_password }}"
+  with_items: "{{ users }}"
+
+- name: Setup | authorized key upload
+  authorized_key: 
+    user: "{{ item.username }}"
+    key: "{{ lookup('file', 'files/keys/{{ item.username }}.pub') }}"
+    path: "/home/{{ item.username }}/.ssh/authorized_keys"
+  with_items: "{{ users }}"
+

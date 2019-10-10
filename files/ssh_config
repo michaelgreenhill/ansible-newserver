@@ -1,0 +1,5 @@
+
+Host riskmodel-v3-repo
+    Hostname bitbucket.org
+    IdentityFile /home/magicadminuser/.ssh/riskmodelv3-builder.pem
+    IdentitiesOnly yes
